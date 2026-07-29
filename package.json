@@ -1,0 +1,18 @@
+{
+  "name": "img2word",
+  "version": "1.0.0",
+  "description": "移动端上传图片，一键生成 Word 文档工具",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "docx": "^8.5.0",
+    "express": "^4.19.2",
+    "image-size": "^1.1.1",
+    "multer": "^2.0.0",
+    "pdfkit": "^0.19.1",
+    "sharp": "^0.35.3"
+  }
+}
