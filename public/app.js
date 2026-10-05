@@ -33,7 +33,7 @@
       animation: 150,
       disabled: busy,
       handle: '.drag-handle',
-      filter: '.del, .move-button',
+      filter: '.del, .move-button, .preview-button',
       preventOnFilter: true,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
@@ -106,11 +106,21 @@
         order.className = 'order';
         order.textContent = (i + 1).toString();
 
+        const imageArea = document.createElement('div');
+        imageArea.className = 'image-area';
         const imgEl = document.createElement('img');
         imgEl.src = img.previewUrl || img.url;
         imgEl.alt = '图片 ' + (i + 1);
         imgEl.loading = 'lazy';
         imgEl.draggable = false;
+        imageArea.addEventListener('click', function () { openPreview(card, img); });
+        const previewButton = document.createElement('button');
+        previewButton.type = 'button';
+        previewButton.className = 'preview-button';
+        previewButton.textContent = '放大';
+        previewButton.setAttribute('aria-label', '放大查看图片');
+        imageArea.appendChild(imgEl);
+        imageArea.appendChild(previewButton);
 
         const controls = document.createElement('div');
         controls.className = 'sort-controls';
@@ -140,7 +150,7 @@
         });
 
         card.appendChild(order);
-        card.appendChild(imgEl);
+        card.appendChild(imageArea);
         card.appendChild(del);
         card.appendChild(controls);
         gallery.appendChild(card);
@@ -320,6 +330,96 @@
 
   closeModal.addEventListener('click', function () {
     resultModal.classList.remove('show');
+  });
+
+  // 图片预览：缩放与双指手势只作用于弹层，不改变列表顺序。
+  const preview = document.getElementById('imagePreview');
+  const previewImage = document.getElementById('previewImage');
+  const previewStage = document.getElementById('previewStage');
+  const previewTitle = document.getElementById('previewTitle');
+  const previewClose = document.getElementById('previewClose');
+  const zoomOut = document.getElementById('zoomOut');
+  const zoomIn = document.getElementById('zoomIn');
+  let zoom = 1, panX = 0, panY = 0, previousFocus = null;
+  let previousOverflow = '';
+  const pointers = new Map();
+  let gesture = null;
+
+  function paintPreview() {
+    previewImage.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')';
+    zoomOut.disabled = zoom <= 1;
+    zoomIn.disabled = zoom >= 5;
+  }
+  function setZoom(value) {
+    zoom = Math.max(1, Math.min(5, value));
+    if (zoom === 1) panX = panY = 0;
+    paintPreview();
+  }
+  function openPreview(card, img) {
+    if (busy) return;
+    previousFocus = document.activeElement;
+    previousOverflow = document.body.style.overflow;
+    zoom = 1; panX = panY = 0; pointers.clear(); gesture = null;
+    previewImage.src = img.previewUrl || img.url;
+    previewTitle.textContent = '图片 ' + (Number(card.dataset.index) + 1) + ' · 查看页码';
+    previewImage.alt = previewTitle.textContent;
+    preview.hidden = false;
+    document.body.style.overflow = 'hidden';
+    paintPreview();
+    previewClose.focus({ preventScroll: true });
+  }
+  function closePreview() {
+    if (preview.hidden) return;
+    preview.hidden = true;
+    document.body.style.overflow = previousOverflow;
+    pointers.clear(); gesture = null;
+    previewImage.removeAttribute('src');
+    if (previousFocus) previousFocus.focus({ preventScroll: true });
+  }
+  function beginGesture() {
+    const points = Array.from(pointers.values());
+    if (!points.length) { gesture = null; return; }
+    const a = points[0], b = points[1] || a;
+    gesture = { x: (a.x+b.x)/2, y: (a.y+b.y)/2,
+      distance: points.length > 1 ? Math.hypot(a.x-b.x,a.y-b.y) : 0,
+      zoom: zoom, panX: panX, panY: panY };
+  }
+  previewStage.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    previewStage.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    beginGesture();
+  });
+  previewStage.addEventListener('pointermove', function (e) {
+    if (!pointers.has(e.pointerId) || !gesture) return;
+    pointers.set(e.pointerId, { x:e.clientX, y:e.clientY });
+    const points = Array.from(pointers.values());
+    const a = points[0], b = points[1] || a;
+    if (points.length > 1 && gesture.distance > 0) {
+      zoom = Math.max(1, Math.min(5, gesture.zoom * Math.hypot(a.x-b.x,a.y-b.y) / gesture.distance));
+    }
+    if (zoom > 1) {
+      panX = gesture.panX + (a.x+b.x)/2 - gesture.x;
+      panY = gesture.panY + (a.y+b.y)/2 - gesture.y;
+    } else { panX = panY = 0; }
+    paintPreview();
+  });
+  ['pointerup','pointercancel','lostpointercapture'].forEach(function (event) {
+    previewStage.addEventListener(event, function (e) { pointers.delete(e.pointerId); beginGesture(); });
+  });
+  previewClose.addEventListener('click', closePreview);
+  zoomIn.addEventListener('click', function () { setZoom(zoom + 0.5); });
+  zoomOut.addEventListener('click', function () { setZoom(zoom - 0.5); });
+  document.getElementById('zoomReset').addEventListener('click', function () { setZoom(1); });
+  document.addEventListener('keydown', function (e) {
+    if (preview.hidden) return;
+    if (e.key === 'Escape') closePreview();
+    if (e.key === 'Tab') {
+      const buttons = Array.from(preview.querySelectorAll('button:not(:disabled)'));
+      const first = buttons[0], last = buttons[buttons.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   });
 
   // 初始渲染

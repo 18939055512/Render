@@ -387,3 +387,16 @@ html, body {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
+
+.image-area { position: relative; cursor: zoom-in; }
+.preview-button { position: absolute; right: 6px; bottom: 6px; min-width: 44px; min-height: 44px; padding: 6px 10px; border: none; border-radius: 8px; background: rgba(0,0,0,.65); color: white; cursor: zoom-in; }
+.image-preview[hidden] { display: none; }
+.image-preview { position: fixed; inset: 0; z-index: 250; background: #16181d; color: white; display: flex; flex-direction: column; }
+.preview-toolbar, .preview-actions { display: flex; align-items: center; gap: 10px; padding: 10px 14px; flex-shrink: 0; background: #242730; z-index: 1; }
+.preview-toolbar { justify-content: space-between; padding-top: max(10px, env(safe-area-inset-top)); }
+.image-preview button { min-width: 44px; min-height: 44px; padding: 8px 12px; border: none; border-radius: 8px; background: #424858; color: white; font-size: 15px; }
+.image-preview button:disabled { opacity: .35; }
+.preview-stage { flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; }
+.preview-stage img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; pointer-events: none; }
+.preview-actions { flex-wrap: wrap; justify-content: center; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+.preview-actions span { font-size: 12px; color: #d0d4de; }
