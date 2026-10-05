@@ -62,6 +62,20 @@
     </div>
   </div>
 
+  <!-- 大图预览 -->
+  <dialog id="imagePreview" class="image-preview" aria-labelledby="previewTitle">
+    <div class="preview-toolbar">
+      <span id="previewTitle">图片预览</span>
+      <button type="button" id="previewZoomOut" aria-label="缩小图片">−</button>
+      <button type="button" id="previewZoomIn" aria-label="放大图片">＋</button>
+      <button type="button" id="previewClose">关闭</button>
+    </div>
+    <div class="preview-viewport" id="previewViewport">
+      <img id="previewImage" alt="" draggable="false">
+    </div>
+    <p class="preview-hint">点击 ＋ 放大，滑动查看页码</p>
+  </dialog>
+
   <!-- 加载遮罩 -->
   <div class="loading-mask" id="loadingMask">
     <div class="loading-box">
