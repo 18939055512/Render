@@ -70,6 +70,22 @@
     </div>
   </div>
 
+  <section id="imagePreview" class="image-preview" role="dialog" aria-modal="true" aria-labelledby="previewTitle" hidden>
+    <div class="preview-toolbar">
+      <span id="previewTitle">查看图片</span>
+      <button id="previewClose" type="button">关闭</button>
+    </div>
+    <div id="previewStage" class="preview-stage">
+      <img id="previewImage" alt="图片预览" draggable="false">
+    </div>
+    <div class="preview-actions">
+      <button id="zoomOut" type="button" aria-label="缩小图片">−</button>
+      <button id="zoomReset" type="button">重置</button>
+      <button id="zoomIn" type="button" aria-label="放大图片">＋</button>
+      <span>双指缩放 · 放大后拖动查看</span>
+    </div>
+  </section>
+
   <!-- Toast 提示 -->
   <div class="toast" id="toast"></div>
 
