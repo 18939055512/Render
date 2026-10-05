@@ -31,8 +31,9 @@
     if (sortable) return;
     sortable = Sortable.create(gallery, {
       animation: 150,
-      handle: '.card',
-      filter: '.del',
+      disabled: busy,
+      handle: '.drag-handle',
+      filter: '.del, .move-button',
       preventOnFilter: true,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
@@ -67,6 +68,24 @@
     orders.forEach(function (el, i) {
       el.textContent = (i + 1).toString();
     });
+    gallery.querySelectorAll('.card').forEach(function (card, i) {
+      card.querySelector('img').alt = '图片 ' + (i + 1);
+      card.querySelector('.move-up').disabled = busy || i === 0;
+      card.querySelector('.move-down').disabled = busy || i === images.length - 1;
+      card.querySelector('.drag-handle').disabled = busy || images.length < 2;
+    });
+  }
+
+  function moveImage(card, direction) {
+    if (busy) return;
+    const index = Number(card.dataset.index);
+    const target = index + direction;
+    if (target < 0 || target >= images.length) return;
+    const neighbor = gallery.children[target];
+    if (direction < 0) gallery.insertBefore(card, neighbor);
+    else gallery.insertBefore(neighbor, card);
+    reorderDataFromDom();
+    refreshOrders();
   }
 
   // 渲染列表
@@ -91,6 +110,25 @@
         imgEl.src = img.previewUrl || img.url;
         imgEl.alt = '图片 ' + (i + 1);
         imgEl.loading = 'lazy';
+        imgEl.draggable = false;
+
+        const controls = document.createElement('div');
+        controls.className = 'sort-controls';
+        const handle = document.createElement('button');
+        handle.type = 'button';
+        handle.className = 'drag-handle';
+        handle.textContent = '⠿';
+        handle.setAttribute('aria-label', '拖动调整图片顺序');
+        handle.title = '按住拖动排序';
+        controls.appendChild(handle);
+        [-1, 1].forEach(function (direction) {
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'move-button ' + (direction < 0 ? 'move-up' : 'move-down');
+          button.textContent = direction < 0 ? '上移' : '下移';
+          button.addEventListener('click', function () { moveImage(card, direction); });
+          controls.appendChild(button);
+        });
 
         const del = document.createElement('button');
         del.className = 'del';
@@ -98,12 +136,13 @@
         del.addEventListener('click', function (e) {
           e.stopPropagation();
           e.preventDefault();
-          deleteImage(i);
+          deleteImage(Number(card.dataset.index));
         });
 
         card.appendChild(order);
         card.appendChild(imgEl);
         card.appendChild(del);
+        card.appendChild(controls);
         gallery.appendChild(card);
       });
     }
@@ -255,6 +294,8 @@
   // 工具函数
   function setBusy(v) {
     busy = v;
+    if (sortable) sortable.option('disabled', busy);
+    refreshOrders();
     generateBtn.disabled = images.length === 0 || busy;
     generatePdfBtn.disabled = images.length === 0 || busy;
   }
