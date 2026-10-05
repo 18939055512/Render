@@ -3,7 +3,6 @@ const multer = require('multer');
 const { Document, Packer, Paragraph, ImageRun } = require('docx');
 const PDFDocument = require('pdfkit');
 const sharp = require('sharp');
-const sizeOf = require('image-size');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -69,6 +68,16 @@ app.post('/api/upload', upload.array('images', 50), (req, res) => {
   res.json({ sessionId, files });
 });
 
+// 真正缩小像素尺寸后嵌入文档，避免只缩小显示尺寸却保留原图。
+async function documentImage(filePath) {
+  return sharp(filePath, { animated: false })
+    .rotate()
+    .resize({ width: 2500, height: 2500, fit: 'inside', withoutEnlargement: true })
+    .flatten({ background: '#ffffff' })
+    .jpeg({ quality: 85 })
+    .toBuffer({ resolveWithObject: true });
+}
+
 // 生成 Word 接口
 app.post('/api/generate', async (req, res) => {
   try {
@@ -78,7 +87,6 @@ app.post('/api/generate', async (req, res) => {
     }
 
     const MAX_W = 600; // 图片最大宽度(像素)，按A4页面适配
-    const sections = [];
     const children = [];
 
     for (let i = 0; i < files.length; i++) {
@@ -88,13 +96,7 @@ app.post('/api/generate', async (req, res) => {
         return res.status(400).json({ error: `图片不存在: ${f.name}` });
       }
 
-      const buf = fs.readFileSync(filePath);
-      let dims;
-      try {
-        dims = sizeOf(buf);
-      } catch (e) {
-        dims = { width: MAX_W, height: MAX_W };
-      }
+      const { data: buf, info: dims } = await documentImage(filePath);
 
       let w = dims.width || MAX_W;
       let h = dims.height || MAX_W;
@@ -149,7 +151,7 @@ app.post('/api/generate-pdf', async (req, res) => {
     const MAX_W = PAGE_W - MARGIN * 2; // 图片最大可用宽度
     const GAP = 20; // 图片间距
 
-    // 先用 sharp 统一处理：转 png buffer + 获取尺寸
+    // 缩小实际像素并转为 JPEG，避免全尺寸 PNG 的 CPU 和内存开销。
     const items = [];
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
@@ -157,23 +159,15 @@ app.post('/api/generate-pdf', async (req, res) => {
       if (!fs.existsSync(filePath)) {
         return res.status(400).json({ error: `图片不存在: ${f.name}` });
       }
-      const raw = fs.readFileSync(filePath);
-      // 转成 png（兼容 jpg/png/webp/gif/bmp），最多取第一帧
-      const pngBuf = await sharp(raw, { animated: false }).flatten({ background: '#ffffff' }).png().toBuffer();
-      let dims;
-      try {
-        dims = sizeOf(pngBuf);
-      } catch (e) {
-        dims = { width: MAX_W, height: MAX_W };
-      }
+      const { data: imageBuf, info: dims } = await documentImage(filePath);
       let w = dims.width || MAX_W;
       let h = dims.height || MAX_W;
-      if (w > MAX_W) {
-        const scale = MAX_W / w;
+      const scale = Math.min(1, MAX_W / w, (PAGE_H - MARGIN * 2) / h);
+      if (scale < 1) {
         w = Math.round(w * scale);
         h = Math.round(h * scale);
       }
-      items.push({ buf: pngBuf, w, h });
+      items.push({ buf: imageBuf, w, h });
     }
 
     const outName = `doc_${Date.now()}.pdf`;
@@ -185,9 +179,8 @@ app.post('/api/generate-pdf', async (req, res) => {
       doc.pipe(stream);
 
       let y = MARGIN;
-      const contentH = PAGE_H - MARGIN * 2;
 
-      items.forEach((it, idx) => {
+      items.forEach((it) => {
         // 当前页放不下则换页
         if (y + it.h > PAGE_H - MARGIN) {
           doc.addPage();
@@ -220,6 +213,15 @@ app.get('/download/:file', (req, res) => {
   res.download(filePath, file, (err) => {
     if (err) console.error('下载错误:', err);
   });
+});
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? '单张图片不能超过 20MB' : '上传图片数量或格式不符合要求' });
+  }
+  if (err.message === '仅支持图片文件') return res.status(400).json({ error: err.message });
+  console.error(err);
+  res.status(500).json({ error: '服务器处理失败，请稍后重试' });
 });
 
 // 删除单张图片（前端删除时调用，清理磁盘）

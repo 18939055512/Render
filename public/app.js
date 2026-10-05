@@ -88,7 +88,7 @@
         order.textContent = (i + 1).toString();
 
         const imgEl = document.createElement('img');
-        imgEl.src = img.url;
+        imgEl.src = img.previewUrl || img.url;
         imgEl.alt = '图片 ' + (i + 1);
         imgEl.loading = 'lazy';
 
@@ -115,34 +115,84 @@
   }
 
   // 上传
+  async function compressImage(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new Image();
+      await new Promise(function (resolve, reject) {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = url;
+      });
+      const scale = Math.min(1, 2500 / Math.max(img.naturalWidth, img.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+      canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(function (resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.85); });
+      canvas.width = canvas.height = 1;
+      if (!blob || blob.size >= file.size) return file;
+      return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+    } catch (e) {
+      return file;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function uploadBatch(file, position, total) {
+    return new Promise(function (resolve, reject) {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload');
+      xhr.timeout = 180000;
+      if (sessionId) xhr.setRequestHeader('x-session-id', sessionId);
+      xhr.upload.onprogress = function (e) {
+        if (e.lengthComputable) loadingText.textContent = '上传第 ' + position + '/' + total + ' 张：' + Math.round(e.loaded / e.total * 100) + '%';
+      };
+      xhr.onload = function () {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          if (xhr.status < 200 || xhr.status >= 300) throw new Error(data.error || '上传失败');
+          resolve(data);
+        } catch (e) { reject(e); }
+      };
+      xhr.onerror = function () { reject(new Error('网络异常，请重新选择未上传的图片')); };
+      xhr.ontimeout = function () { reject(new Error('上传超时，请重新选择未上传的图片')); };
+      const form = new FormData();
+      form.append('images', file);
+      xhr.send(form);
+    });
+  }
+
   async function uploadFiles(files) {
     if (!files || files.length === 0) return;
     if (busy) return;
+    const selected = Array.from(files);
     setBusy(true);
+    loadingMask.classList.add('show');
+    let added = 0;
     try {
-      const formData = new FormData();
-      for (let i = 0; i < files.length; i++) {
-        formData.append('images', files[i]);
+      for (let i = 0; i < selected.length; i++) {
+        loadingText.textContent = '正在优化第 ' + (i + 1) + '/' + selected.length + ' 张图片…';
+        const file = await compressImage(selected[i]);
+        if (file.size > 20 * 1024 * 1024) throw new Error('图片超过 20MB：' + selected[i].name);
+        const data = await uploadBatch(file, i + 1, selected.length);
+        sessionId = data.sessionId;
+        data.files.forEach(function (f) {
+          f.previewUrl = URL.createObjectURL(file);
+          images.push(f);
+          added++;
+        });
+        render();
       }
-      const headers = {};
-      if (sessionId) headers['x-session-id'] = sessionId;
-
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        headers: headers,
-        body: formData,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || '上传失败');
-      sessionId = data.sessionId;
-      data.files.forEach(function (f) {
-        images.push(f);
-      });
-      render();
-      showToast('已添加 ' + data.files.length + ' 张图片');
+      showToast('已添加 ' + added + ' 张图片');
     } catch (e) {
-      showToast(e.message || '上传出错');
+      showToast((added ? '已保留 ' + added + ' 张。' : '') + (e.message || '上传出错'));
     } finally {
+      loadingMask.classList.remove('show');
       setBusy(false);
       fileInput.value = '';
     }
@@ -150,8 +200,10 @@
 
   // 删除
   async function deleteImage(index) {
+    if (busy) return;
     const img = images[index];
     if (!img) return;
+    if (img.previewUrl) URL.revokeObjectURL(img.previewUrl);
     images.splice(index, 1);
     render();
     // 后台清理
