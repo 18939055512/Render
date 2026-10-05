@@ -23,6 +23,54 @@
   const loadingMask = document.getElementById('loadingMask');
   const loadingText = document.getElementById('loadingText');
   const toast = document.getElementById('toast');
+  const preview = document.getElementById('imagePreview');
+  const previewImage = document.getElementById('previewImage');
+  const previewTitle = document.getElementById('previewTitle');
+  const previewViewport = document.getElementById('previewViewport');
+  const previewZoomIn = document.getElementById('previewZoomIn');
+  const previewZoomOut = document.getElementById('previewZoomOut');
+  let previewScale = 1;
+  let previewOpener = null;
+  let previousOverflow = '';
+
+  function updatePreviewZoom() {
+    previewImage.style.width = (previewScale * 100) + '%';
+    previewZoomOut.disabled = previewScale === 1;
+    previewZoomIn.disabled = previewScale === 4;
+  }
+
+  function openPreview(card, opener) {
+    if (busy || preview.open) return;
+    const index = Number(card.dataset.index);
+    const img = images[index];
+    if (!img) return;
+    previewOpener = opener;
+    previewScale = 1;
+    previewImage.src = img.previewUrl || img.url;
+    previewImage.alt = '图片 ' + (index + 1) + ' 大图';
+    previewTitle.textContent = '图片 ' + (index + 1) + ' / ' + images.length;
+    updatePreviewZoom();
+    previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    preview.showModal();
+    previewViewport.scrollTop = previewViewport.scrollLeft = 0;
+  }
+
+  previewZoomIn.addEventListener('click', function () {
+    previewScale = Math.min(4, previewScale + 1);
+    updatePreviewZoom();
+  });
+  previewZoomOut.addEventListener('click', function () {
+    previewScale = Math.max(1, previewScale - 1);
+    updatePreviewZoom();
+  });
+  document.getElementById('previewClose').addEventListener('click', function () { preview.close(); });
+  preview.addEventListener('click', function (e) { if (e.target === preview) preview.close(); });
+  preview.addEventListener('close', function () {
+    document.body.style.overflow = previousOverflow;
+    previewImage.removeAttribute('src');
+    if (previewOpener && previewOpener.isConnected) previewOpener.focus({ preventScroll: true });
+  });
 
   let sortable = null;
 
@@ -33,8 +81,8 @@
       animation: 150,
       disabled: busy,
       handle: '.drag-handle',
-      filter: '.del, .move-button',
-      preventOnFilter: true,
+      filter: '.del, .move-button, .preview-trigger',
+      preventOnFilter: false,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
       dragClass: 'sortable-drag',
@@ -112,6 +160,22 @@
         imgEl.loading = 'lazy';
         imgEl.draggable = false;
 
+        const thumbnail = document.createElement('div');
+        thumbnail.className = 'thumbnail';
+        const imageButton = document.createElement('button');
+        imageButton.type = 'button';
+        imageButton.className = 'image-button preview-trigger';
+        imageButton.setAttribute('aria-label', '查看大图');
+        imageButton.appendChild(imgEl);
+        imageButton.addEventListener('click', function () { openPreview(card, imageButton); });
+        const zoomButton = document.createElement('button');
+        zoomButton.type = 'button';
+        zoomButton.className = 'zoom-button preview-trigger';
+        zoomButton.textContent = '放大';
+        zoomButton.addEventListener('click', function () { openPreview(card, zoomButton); });
+        thumbnail.appendChild(imageButton);
+        thumbnail.appendChild(zoomButton);
+
         const controls = document.createElement('div');
         controls.className = 'sort-controls';
         const handle = document.createElement('button');
@@ -140,7 +204,7 @@
         });
 
         card.appendChild(order);
-        card.appendChild(imgEl);
+        card.appendChild(thumbnail);
         card.appendChild(del);
         card.appendChild(controls);
         gallery.appendChild(card);
